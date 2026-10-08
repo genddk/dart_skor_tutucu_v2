@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dart Skor Tutucu Pro</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --panel-bg: #1e1e1e;
+            --text-color: #ffffff;
+            --accent: #ff4757;
+            --success: #2ed573;
+            --warning: #ffa502;
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            padding: 10px;
+        }
+        .header {
+            width: 100%;
+            max-width: 500px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        select, button {
+            background-color: #333;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button:active { background-color: #555; }
+        .score-board {
+            background-color: var(--panel-bg);
+            width: 100%;
+            max-width: 500px;
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+            margin-bottom: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .main-score {
+            font-size: 64px;
+            font-weight: 800;
+            line-height: 1;
+            margin-bottom: 5px;
+            color: var(--success);
+        }
+        .checkout-suggestion {
+            font-size: 16px;
+            color: var(--warning);
+            margin-bottom: 10px;
+            font-weight: bold;
+            min-height: 22px;
+            display: none;
+        }
+        .throws {
+            display: flex;
+            justify-content: space-around;
+            background: #2a2a2a;
+            padding: 10px;
+            border-radius: 8px;
+            min-height: 52px;
+            gap: 10px;
+        }
+        .throw-box {
+            width: 30%;
+            border-bottom: 2px solid #555;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            transition: background 0.2s;
+            font-weight: bold;
+            user-select: none;
+        }
+        .throw-box:hover {
+            background-color: #444;
+        }
+        .board-container {
+            width: 100%;
+            max-width: 450px;
+            aspect-ratio: 1 / 1;
+            position: relative;
+            touch-action: none; /* Swipe yaparken sayfanın kaymasını engeller */
+            margin-bottom: 10px;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: #222;
+            box-shadow: 0 0 20px rgba(0,0,0,0.6);
+        }
+        .instructions {
+            font-size: 12px;
+            color: #aaa;
+            text-align: center;
+            max-width: 500px;
+            margin-bottom: 15px;
+            background: #1e1e1e;
+            padding: 8px;
+            border-radius: 8px;
+        }
+        .controls {
+            width: 100%;
+            max-width: 500px;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 20px;
+        }
+        .btn-danger { background-color: var(--accent); }
+        .btn-primary { background-color: #3742fa; flex-grow: 1; margin-left: 10px;}
+        .btn-warning { background-color: #ff9f43; color: black; }
+        
+        .message-overlay {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.9);
+            padding: 20px 40px;
+            border-radius: 12px;
+            font-size: 24px;
+            font-weight: bold;
+            display: none;
+            z-index: 10;
+            text-align: center;
+            border: 2px solid var(--accent);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <select id="gameMode" onchange="startNewGame()">
+            <option value="301">301</option>
+            <option value="501">501</option>
+        </select>
+        <button class="btn-danger" onclick="startNewGame()">Yeni Oyun</button>
+    </div>
+
+    <div class="score-board">
+        <div class="main-score" id="currentScoreDisplay">301</div>
+        <div class="checkout-suggestion" id="checkoutSuggestion"></div>
+        <div class="throws">
+            <div class="throw-box" id="throw1" onclick="removeThrow(0)">-</div>
+            <div class="throw-box" id="throw2" onclick="removeThrow(1)">-</div>
+            <div class="throw-box" id="throw3" onclick="removeThrow(2)">-</div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <button class="btn-warning" onclick="undoThrow()">Geri Al</button>
+        <button class="btn-primary" onclick="nextRound()">Turu Geç</button>
+    </div>
+
+    <div class="board-container">
+        <canvas id="dartboard"></canvas>
+    </div>
+
+    <div class="instructions">
+        👆 <b>Dokunma:</b> Single | ↗️ <b>Dışa Kaydır:</b> Double | ↙️ <b>İçe Kaydır:</b> Treble<br>
+        🎯 <b>Orta Alan:</b> 25 | ↕️ Orta Alanda Herhangi Yöne Kaydırma: 50
+    </div>
+
+    <div id="msgOverlay" class="message-overlay"></div>
+
+    <script>
+        const canvas = document.getElementById('dartboard');
+        const ctx = canvas.getContext('2d');
+        let width, height, R;
+        
+        const sectors = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
+        
+        // Oyun Durumu
+        let gameMode = 301;
+        let score = 301;
+        let roundStartScore = 301;
+        let currentThrows = [null, null, null];
+        let isGameOver = false;
+        let isBust = false;
+
+        // Bitiriş (Checkout) Algoritması için Geçerli Atış Listeleri
+        const validThrows = [];
+        const validDoubles = [{val: 50, label: 'BULL'}];
+        
+        for(let i=20; i>=1; i--) {
+            validThrows.push({val: i*3, label: 'T'+i});
+            validThrows.push({val: i*2, label: 'D'+i});
+            validThrows.push({val: i, label: i.toString()});
+            validDoubles.push({val: i*2, label: 'D'+i});
+        }
+        validThrows.push({val: 50, label: 'BULL'});
+        validThrows.push({val: 25, label: '25'});
+        validThrows.sort((a,b) => b.val - a.val); // Yüksek puanlı atışları (Treble vb.) önce denemek için sırala
+
+        // Çözünürlük ve Tahta Çizimi
+        function resizeCanvas() {
+            const container = document.querySelector('.board-container');
+            width = container.clientWidth;
+            height = container.clientHeight;
+            canvas.width = width * 2; 
+            canvas.height = height * 2;
+            ctx.scale(2, 2);
+            R = width / 2;
+            drawBoard();
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        function drawBoard() {
+            const cx = width / 2;
+            const cy = height / 2;
+            
+            const rNum = R * 0.90;
+            const rOut = R * 0.75; 
+            const rInD = R * 0.68; // Double iç sınır
+            const rOutT = R * 0.45; // Treble dış sınır
+            const rInT = R * 0.38; // Treble iç sınır
+            const rInB = R * 0.14; 
+
+            ctx.clearRect(0, 0, width, height);
+
+            // Dış Siyah Alan
+            ctx.beginPath();
+            ctx.arc(cx, cy, R, 0, Math.PI * 2);
+            ctx.fillStyle = "#111";
+            ctx.fill();
+
+            const angleStep = (Math.PI * 2) / 20;
+
+            for (let i = 0; i < 20; i++) {
+                const startAngle = -Math.PI / 2 - angleStep / 2 + i * angleStep;
+                const endAngle = startAngle + angleStep;
+                const isEven = i % 2 === 0;
+                const colorSingle = isEven ? "#000000" : "#f4e4c1";
+                const colorDoubleTreble = isEven ? "#e3292e" : "#309f6a";
+
+                // Tekli (Dış Geniş Alan)
+                drawArc(cx, cy, rInD, rOut, startAngle, endAngle, colorSingle);
+                // Double Halkası (Görsel olarak üstüne biner, tıklama sadece rOut'a kadardır)
+                drawArc(cx, cy, rInD, rOut, startAngle, endAngle, colorDoubleTreble);
+                // Tekli Alanı (Treble ile Double arası)
+                drawArc(cx, cy, rOutT, rInD, startAngle, endAngle, colorSingle);
+                // Treble Halkası (Görsel)
+                drawArc(cx, cy, rInT, rOutT, startAngle, endAngle, colorDoubleTreble);
+                // Tekli (İç Dar Alan)
+                drawArc(cx, cy, rInB, rInT, startAngle, endAngle, colorSingle);
+
+                // Numaralar
+                const textAngle = startAngle + angleStep / 2;
+                const tx = cx + Math.cos(textAngle) * rNum;
+                const ty = cy + Math.sin(textAngle) * rNum;
+                
+                ctx.fillStyle = "white";
+                ctx.font = `bold ${R * 0.15}px sans-serif`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.save();
+                ctx.translate(tx, ty);
+                let rot = textAngle + Math.PI / 2;
+                if (textAngle > 0 && textAngle < Math.PI) rot += Math.PI; 
+                ctx.rotate(rot);
+                ctx.fillText(sectors[i], 0, 0);
+                ctx.restore();
+            }
+
+            // Orta Alan (Görsel olarak tek yeşil/kırmızı karışımı)
+            drawArc(cx, cy, 0, rInB, 0, Math.PI * 2, "#309f6a");
+            drawArc(cx, cy, 0, rInB*0.5, 0, Math.PI * 2, "#e3292e"); 
+            
+            // Tel Çizgiler
+            ctx.strokeStyle = "#ddd";
+            ctx.lineWidth = 1.5;
+            for (let i = 0; i < 20; i++) {
+                const angle = -Math.PI / 2 - angleStep / 2 + i * angleStep;
+                ctx.beginPath();
+                ctx.moveTo(cx + Math.cos(angle) * rInB, cy + Math.sin(angle) * rInB);
+                ctx.lineTo(cx + Math.cos(angle) * rOut, cy + Math.sin(angle) * rOut);
+                ctx.stroke();
+            }
+            ctx.beginPath(); ctx.arc(cx, cy, rOut, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(cx, cy, rInD, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(cx, cy, rOutT, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(cx, cy, rInT, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(cx, cy, rInB, 0, Math.PI * 2); ctx.stroke();
+        }
+
+        function drawArc(x, y, rIn, rOut, sAngle, eAngle, color) {
+            ctx.beginPath();
+            ctx.arc(x, y, rOut, sAngle, eAngle);
+            ctx.arc(x, y, rIn, eAngle, sAngle, true);
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+        }
+
+        let startX = null, startY = null, activePoints = null;
+
+        canvas.addEventListener('pointerdown', function(e) {
+            let throwCount = currentThrows.filter(t => t !== null).length;
+            if (isGameOver || throwCount >= 3 || isBust) return;
+            e.preventDefault(); // Sayfa kaymasını önle
+            
+            const rect = canvas.getBoundingClientRect();
+            const cx = width / 2;
+            const cy = height / 2;
+            startX = e.clientX - rect.left;
+            startY = e.clientY - rect.top;
+
+            const dx = startX - cx;
+            const dy = startY - cy;
+            const r = Math.sqrt(dx*dx + dy*dy);
+            
+            let angle = Math.atan2(dy, dx);
+            angle = angle + Math.PI / 2; 
+            if (angle < 0) angle += Math.PI * 2;
+
+            const rOut = R * 0.75;
+            const rInB = R * 0.14;
+
+            if (r > rOut) {
+                activePoints = 0; // Miss
+            } else if (r <= rInB) {
+                activePoints = 25; // Orta alan
+            } else {
+                const angleStep = (Math.PI * 2) / 20;
+                let sliceIndex = Math.floor((angle + angleStep/2) / angleStep);
+                if (sliceIndex === 20) sliceIndex = 0;
+                activePoints = sectors[sliceIndex];
+            }
+        });
+
+        canvas.addEventListener('pointerup', function(e) {
+            if (activePoints === null) return;
+            e.preventDefault();
+            
+            const rect = canvas.getBoundingClientRect();
+            const cx = width / 2;
+            const cy = height / 2;
+            
+            let endX = e.clientX - rect.left;
+            let endY = e.clientY - rect.top;
+            
+            // Kaydırma vektörü
+            let dx = endX - startX;
+            let dy = endY - startY;
+            let distance = Math.sqrt(dx*dx + dy*dy);
+            
+            let multiplier = 1;
+            const swipeThreshold = 20; // Sürükleme algılama mesafesi (piksel)
+
+            if (activePoints === 0) {
+                multiplier = 1;
+            } else if (activePoints === 25) {
+                // Orta alanda herhangi bir yöne kaydırma 50 verir (Double Bull)
+                if (distance > swipeThreshold) multiplier = 2;
+            } else {
+                if (distance > swipeThreshold) {
+                    // Merkezden dokunulan noktaya olan Konum Vektörü
+                    let px = startX - cx;
+                    let py = startY - cy;
+                    
+                    // Vektörel çarpım (Dot Product) ile açı yönü analizi
+                    // Eğer sonuç pozitifse; kaydırma, tahtanın o bölümünden dışa doğrudur (Double)
+                    // Sonuç negatifse; kaydırma, o bölümden merkeze/içe doğrudur (Treble)
+                    let dotProduct = (px * dx) + (py * dy);
+                    
+                    if (dotProduct > 0) {
+                        multiplier = 2; // Dışa Kaydırma
+                    } else {
+                        multiplier = 3; // İçe (Merkeze) Kaydırma
+                    }
+                }
+            }
+
+            registerThrow(activePoints, multiplier);
+            activePoints = null;
+        });
+        
+        canvas.addEventListener('pointercancel', () => activePoints = null);
+        canvas.addEventListener('pointerout', () => activePoints = null);
+
+        function registerThrow(points, multiplier) {
+            // Boş olan ilk slotu (atış kutusunu) bul
+            let emptyIndex = currentThrows.findIndex(t => t === null);
+            if (emptyIndex === -1) return; 
+
+            let throwValue = points * multiplier;
+            
+            let label = "";
+            if (points === 0) label = "MISS";
+            else if (points === 25 && multiplier === 2) label = "BULL";
+            else if (points === 25 && multiplier === 1) label = "25";
+            else if (multiplier === 3) label = "T" + points;
+            else if (multiplier === 2) label = "D" + points;
+            else label = points.toString();
+
+            // Sadece boş olan ilk slota yerleştir
+            currentThrows[emptyIndex] = { 
+                label: label, 
+                value: throwValue, 
+                multiplier: multiplier,
+                isBustHit: false
+            };
+
+            recalculateScore();
+        }
+
+        function recalculateScore() {
+            let tempScore = roundStartScore;
+            isBust = false;
+
+            for (let i = 0; i < 3; i++) {
+                let t = currentThrows[i];
+                if (!t) continue; // Eğer o alan silinmişse veya henüz atılmamışsa atla
+
+                let rem = tempScore - t.value;
+                
+                // Double Out Kuralı
+                if (rem < 0 || rem === 1 || (rem === 0 && t.multiplier !== 2)) {
+                    isBust = true;
+                    t.isBustHit = true;
+                    tempScore = roundStartScore;
+                    break;
+                } else {
+                    t.isBustHit = false;
+                    tempScore = rem;
+                }
+            }
+
+            score = tempScore;
+            updateUI();
+
+            if (score === 0 && !isBust) {
+                isGameOver = true;
+                showMessage("TEBRİKLER!<br>Oyunu Bitirdiniz.");
+            }
+        }
+
+        // Hatalı Tıklamayı Düzeltme / Silme
+        function removeThrow(index) {
+            if (index < 0 || index >= 3) return;
+            isGameOver = false; 
+            document.getElementById('msgOverlay').style.display = 'none';
+            
+            // Seçilen atışı boşaltır, diğer oklar yer değiştirmez
+            currentThrows[index] = null;
+            recalculateScore();
+        }
+
+        // En son atılanı geri alma butonu için
+        function undoThrow() {
+            // En sondaki dolu slotu bul ve boşalt
+            for (let i = 2; i >= 0; i--) {
+                if (currentThrows[i] !== null) {
+                    removeThrow(i);
+                    break;
+                }
+            }
+        }
+
+        // Tur Geçişi ve Yeni Oyun
+        function nextRound() {
+            if (isGameOver) return;
+            let throwCount = currentThrows.filter(t => t !== null).length;
+            if (throwCount === 0) return; // Hiç ok atılmamışsa tur geçilmesine izin verme
+
+            roundStartScore = score; // Skoru sabitle
+            currentThrows = [null, null, null];
+            isBust = false;
+            updateUI();
+        }
+
+        function startNewGame() {
+            gameMode = parseInt(document.getElementById('gameMode').value);
+            score = gameMode;
+            roundStartScore = gameMode;
+            currentThrows = [null, null, null];
+            isGameOver = false;
+            isBust = false;
+            document.getElementById('msgOverlay').style.display = 'none';
+            updateUI();
+        }
+
+        function getCheckout(target, dartsRemaining) {
+            if (target > 170 || target < 2) return null;
+            
+            // 1 okla bitiriş
+            if (dartsRemaining >= 1) {
+                let d = validDoubles.find(d => d.val === target);
+                if (d) return d.label;
+            }
+            // 2 okla bitiriş
+            if (dartsRemaining >= 2) {
+                for (let d of validDoubles) {
+                    let rem = target - d.val;
+                    if (rem > 0) {
+                        let t = validThrows.find(t => t.val === rem);
+                        if (t) return t.label + " ➔ " + d.label;
+                    }
+                }
+            }
+            // 3 okla bitiriş
+            if (dartsRemaining >= 3) {
+                for (let d of validDoubles) {
+                    let rem = target - d.val;
+                    if (rem > 0) {
+                        for (let t1 of validThrows) {
+                            let rem2 = rem - t1.val;
+                            if (rem2 > 0) {
+                                let t2 = validThrows.find(t => t.val === rem2);
+                                if (t2) return t1.label + " ➔ " + t2.label + " ➔ " + d.label;
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        function updateUI() {
+            document.getElementById('currentScoreDisplay').innerText = score;
+            
+            for (let i = 0; i < 3; i++) {
+                const box = document.getElementById('throw' + (i + 1));
+                let t = currentThrows[i];
+
+                if (t !== null) {
+                    box.style.cursor = "pointer";
+                    box.style.background = "#444";
+                    
+                    if (t.isBustHit) {
+                        box.style.color = "var(--accent)";
+                        box.innerHTML = t.label + "<br><span style='font-size:12px'>(BUST)</span>";
+                    } else {
+                        box.style.color = "white";
+                        box.innerText = t.label;
+                    }
+                } else {
+                    box.innerText = "-";
+                    box.style.color = "#777";
+                    box.style.cursor = "default";
+                    box.style.background = "transparent";
+                }
+            }
+
+            // Checkout (Bitiriş) Önerisini Göster
+            const checkoutDiv = document.getElementById('checkoutSuggestion');
+            let throwCount = currentThrows.filter(t => t !== null).length;
+
+            if (!isBust && score <= 160 && score > 1 && throwCount < 3) {
+                let suggestion = getCheckout(score, 3 - throwCount);
+                if (suggestion) {
+                    checkoutDiv.innerText = "Bitiriş: " + suggestion;
+                    checkoutDiv.style.display = "block";
+                } else {
+                    checkoutDiv.style.display = "none";
+                }
+            } else {
+                checkoutDiv.style.display = "none";
+            }
+        }
+
+        function showMessage(msg) {
+            const overlay = document.getElementById('msgOverlay');
+            overlay.innerHTML = msg;
+            overlay.style.display = 'block';
+        }
+
+        // Başlangıç Ayarları
+        window.onload = () => {
+            resizeCanvas();
+            startNewGame();
+        };
+    </script>
+</body>
+</html>
